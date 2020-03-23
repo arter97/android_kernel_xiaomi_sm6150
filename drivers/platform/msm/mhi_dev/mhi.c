@@ -46,7 +46,6 @@
 #define MHI_RING_PRIMARY_EVT_ID		1
 #define MHI_1K_SIZE			0x1000
 /* Updated Specification for event start is NER - 2 and end - NER -1 */
-#define MHI_HW_ACC_EVT_RING_START	3
 #define MHI_HW_ACC_EVT_RING_END		1
 
 #define MHI_HOST_REGION_NUM             2
@@ -709,7 +708,7 @@ void mhi_dev_read_from_host_edma(struct mhi_dev *mhi, struct mhi_addr *transfer)
 	}
 
 	mhi_log(MHI_MSG_VERBOSE,
-		"device 0x%x <<-- host 0x%llx, size %d\n",
+		"device 0x%llx <<-- host 0x%llx, size %d\n",
 		transfer->phy_addr, host_addr_pa,
 		(int) transfer->size);
 
@@ -1041,7 +1040,7 @@ static void mhi_dev_get_erdb_db_cfg(struct mhi_dev *mhi,
 		erdb_cfg->end = HW_CHANNEL_END;
 	} else {
 		erdb_cfg->base = mhi->cfg.event_rings -
-					MHI_HW_ACC_EVT_RING_START;
+					(mhi->cfg.hw_event_rings);
 		erdb_cfg->end =  mhi->cfg.event_rings -
 					MHI_HW_ACC_EVT_RING_END;
 	}
@@ -1240,17 +1239,32 @@ static int mhi_hwc_chcmd(struct mhi_dev *mhi, uint chid,
 	case MHI_DEV_RING_EL_START:
 		connect_params.channel_id = chid;
 		connect_params.sys.skip_ep_cfg = true;
-		if (chid == MHI_CLIENT_ADPL_IN)
+
+		switch (chid) {
+		case MHI_CLIENT_ADPL_IN:
 			connect_params.sys.client = IPA_CLIENT_MHI_DPL_CONS;
-		else if ((chid % 2) == 0x0)
+			break;
+		case MHI_CLIENT_IP_HW_0_OUT:
 			connect_params.sys.client = IPA_CLIENT_MHI_PROD;
-		else
+			break;
+		case MHI_CLIENT_IP_HW_0_IN:
 			connect_params.sys.client = IPA_CLIENT_MHI_CONS;
+			break;
+		case MHI_CLIENT_IP_HW_1_OUT:
+			connect_params.sys.client = IPA_CLIENT_MHI2_PROD;
+			break;
+		case MHI_CLIENT_IP_HW_1_IN:
+			connect_params.sys.client = IPA_CLIENT_MHI2_CONS;
+			break;
+		default:
+			pr_err("Invalid channel = 0x%X\n", chid);
+			return -EINVAL;
+		}
 
 		rc = ipa_mhi_connect_pipe(&connect_params,
 			&mhi->ipa_clnt_hndl[chid-HW_CHANNEL_BASE]);
 		if (rc)
-			pr_err("HW Channel%d start failed 0x%X\n",
+			pr_err("HW Channel%d start failed : %d\n",
 							chid, rc);
 		break;
 	case MHI_DEV_RING_EL_INVALID:
@@ -1493,7 +1507,7 @@ static int mhi_dev_send_cmd_comp_event(struct mhi_dev *mhi,
 	event.evt_cmd_comp.ptr = mhi->cmd_ctx_cache->rbase
 			+ (mhi->ring[MHI_RING_CMD_ID].rd_offset *
 			(sizeof(union mhi_dev_ring_element_type)));
-	mhi_log(MHI_MSG_VERBOSE, "evt cmd comp ptr :%d\n",
+	mhi_log(MHI_MSG_VERBOSE, "evt cmd comp ptr :%lx\n",
 			(size_t) event.evt_cmd_comp.ptr);
 	event.evt_cmd_comp.type = MHI_DEV_RING_EL_CMD_COMPLETION_EVT;
 	event.evt_cmd_comp.code = code;
@@ -1807,7 +1821,7 @@ static void mhi_dev_process_tre_ring(struct mhi_dev *mhi,
 
 	if (ring->id < mhi->ch_ring_start) {
 		mhi_log(MHI_MSG_VERBOSE,
-			"invalid channel ring id (%d), should be < %d\n",
+			"invalid channel ring id (%d), should be < %lu\n",
 			ring->id, mhi->ch_ring_start);
 		return;
 	}
@@ -2787,7 +2801,7 @@ int mhi_dev_read_channel(struct mhi_req *mreq)
 		el = &ring->ring_cache[ring->rd_offset];
 		mhi_log(MHI_MSG_VERBOSE, "evtptr : 0x%llx\n",
 						el->tre.data_buf_ptr);
-		mhi_log(MHI_MSG_VERBOSE, "evntlen : 0x%x, offset:%d\n",
+		mhi_log(MHI_MSG_VERBOSE, "evntlen : 0x%x, offset:%lu\n",
 						el->tre.len, ring->rd_offset);
 
 		if (ch->tre_loc) {
@@ -2832,7 +2846,7 @@ int mhi_dev_read_channel(struct mhi_req *mreq)
 		mreq->el = el;
 		mreq->transfer_len = bytes_to_read;
 		mreq->rd_offset = ring->rd_offset;
-		mhi_log(MHI_MSG_VERBOSE, "reading %d bytes from chan %d\n",
+		mhi_log(MHI_MSG_VERBOSE, "reading %lu bytes from chan %d\n",
 				bytes_to_read, mreq->chan);
 		rc = mhi_ctx->host_to_device((void *) write_to_loc,
 				read_from_loc, bytes_to_read, mhi_ctx, mreq);
@@ -2983,7 +2997,7 @@ int mhi_dev_write_channel(struct mhi_req *wreq)
 		el = &ring->ring_cache[ring->rd_offset];
 		tre_len = el->tre.len;
 		if (wreq->len > tre_len) {
-			pr_err("%s(): rlen = %d, tlen = %d: client buf > tre len\n",
+			pr_err("%s(): rlen = %lu, tlen = %d: client buf > tre len\n",
 					__func__, wreq->len, tre_len);
 			bytes_written = -ENOMEM;
 			goto exit;
@@ -3437,6 +3451,9 @@ static int get_device_tree_data(struct platform_device *pdev)
 	pm_stay_awake(mhi->dev);
 	atomic_set(&mhi->mhi_dev_wake, 1);
 
+	mhi->enable_m2 = of_property_read_bool((&pdev->dev)->of_node,
+				"qcom,enable-m2");
+
 	mhi_log(MHI_MSG_VERBOSE, "acquiring wakelock\n");
 
 	return 0;
@@ -3539,6 +3556,8 @@ static int mhi_dev_resume_mmio_mhi_reinit(struct mhi_dev *mhi_ctx)
 		EP_PCIE_EVENT_PM_D3_COLD |
 		EP_PCIE_EVENT_PM_D0 |
 		EP_PCIE_EVENT_PM_RST_DEAST |
+		EP_PCIE_EVENT_L1SUB_TIMEOUT |
+		EP_PCIE_EVENT_L1SUB_TIMEOUT_EXIT |
 		EP_PCIE_EVENT_LINKDOWN;
 	if (!mhi_ctx->mhi_int)
 		mhi_ctx->event_reg.events |= EP_PCIE_EVENT_MHI_A7;
@@ -3703,6 +3722,8 @@ static int mhi_dev_resume_mmio_mhi_init(struct mhi_dev *mhi_ctx)
 		EP_PCIE_EVENT_PM_D3_COLD |
 		EP_PCIE_EVENT_PM_D0 |
 		EP_PCIE_EVENT_PM_RST_DEAST |
+		EP_PCIE_EVENT_L1SUB_TIMEOUT |
+		EP_PCIE_EVENT_L1SUB_TIMEOUT_EXIT |
 		EP_PCIE_EVENT_LINKDOWN;
 	if (!mhi_ctx->mhi_int)
 		mhi_ctx->event_reg.events |= EP_PCIE_EVENT_MHI_A7;

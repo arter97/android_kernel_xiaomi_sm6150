@@ -30,6 +30,7 @@ menuconfig SOFTLED_CAMERA
         bool "use soft flash led"
         default n
 
+source "drivers/media/platform/msm/vidc_3x/Kconfig"
 source "drivers/media/platform/msm/vidc/Kconfig"
 source "drivers/media/platform/msm/sde/Kconfig"
 source "drivers/media/platform/msm/npu/Kconfig"

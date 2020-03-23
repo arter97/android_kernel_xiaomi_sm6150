@@ -63,19 +63,19 @@
 			reg = <0x0 0x86400000 0x0 0x1000000>;
 		};
 
-		adsp_fw_mem: adsp_fw_mem@87500000 {
+		adsp_fw_mem: adsp_fw_mem@87400000 {
 			compatible = "removed-dma-pool";
 			no-map;
 			reg = <0x0 0x87400000 0x0 0x1400000>;
 		};
 
-		cdsp_fw_mem: cdsp_fw_mem@88f00000 {
+		cdsp_fw_mem: cdsp_fw_mem@88800000 {
 			compatible = "removed-dma-pool";
 			no-map;
 			reg = <0x0 0x88800000 0x0 0x800000>;
 		};
 
-		wlan_msa_mem: wlan_msa_region@89500000 {
+		wlan_msa_mem: wlan_msa_region@88E00000 {
 			compatible = "removed-dma-pool";
 			no-map;
 			reg = <0x0 0x89000000 0x0 0x100000>;
@@ -310,6 +310,7 @@
 		reg = <0x1800000 0x80000>;
 		reg-names = "cc_base";
 		vdd_cx-supply = <&pms405_s1_level>;
+		vdd_sr_pll-supply = <&pms405_l3>;
 		clocks = <&clock_rpmcc RPM_SMD_XO_CLK_SRC>;
 		qcom,gcc_oxili_gfx3d_clk-opp-handle = <&msm_gpu>;
 		clock-names = "cxo";
@@ -700,7 +701,7 @@
 		memory-region = <&adsp_mem>;
 	};
 
-	qcom,smp2p_sleepstate {
+	smp2p_sleepstate: qcom,smp2p_sleepstate {
 		compatible = "qcom,smp2p-sleepstate";
 		qcom,smem-states = <&sleepstate_smp2p_out 0>;
 	};

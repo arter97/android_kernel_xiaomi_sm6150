@@ -252,6 +252,9 @@ extern struct bus_type mhi_bus_type;
 #define REMOTE_TICKS_TO_US(x) (div_u64((x) * 100ULL, \
 			       div_u64(mhi_cntrl->remote_timer_freq, 10000ULL)))
 
+/* Wait time to allow runtime framework to resume MHI in milliseconds */
+#define MHI_RESUME_TIME	(30000)
+
 struct mhi_event_ctxt {
 	u32 reserved : 8;
 	u32 intmodc : 8;
@@ -676,7 +679,6 @@ struct mhi_chan {
 	struct mhi_ring buf_ring;
 	struct mhi_ring tre_ring;
 	u32 er_index;
-	u32 intmod;
 	enum mhi_ch_type type;
 	enum dma_data_direction dir;
 	struct db_cfg db_cfg;
@@ -684,6 +686,7 @@ struct mhi_chan {
 	enum MHI_XFER_TYPE xfer_type;
 	enum MHI_CH_STATE ch_state;
 	enum MHI_EV_CCS ccs;
+	bool bei; /* based on interrupt moderation, true if greater than 0 */
 	bool lpm_notify;
 	bool configured;
 	bool offload_ch;
@@ -702,6 +705,9 @@ struct mhi_chan {
 	struct completion completion;
 	rwlock_t lock;
 	struct list_head node;
+
+	/* stats */
+	u64 mode_change;
 };
 
 struct tsync_node {
@@ -745,6 +751,7 @@ extern struct mhi_bus mhi_bus;
 struct mhi_controller *find_mhi_controller_by_name(const char *name);
 
 /* debug fs related functions */
+int mhi_debugfs_mhi_vote_show(struct seq_file *m, void *d);
 int mhi_debugfs_mhi_chan_show(struct seq_file *m, void *d);
 int mhi_debugfs_mhi_event_show(struct seq_file *m, void *d);
 int mhi_debugfs_mhi_states_show(struct seq_file *m, void *d);

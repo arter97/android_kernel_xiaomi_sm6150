@@ -2,7 +2,7 @@
  * Core MDSS framebuffer driver.
  *
  * Copyright (C) 2007 Google Incorporated
- * Copyright (c) 2008-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2008-2019, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -1284,7 +1284,7 @@ static int mdss_fb_probe(struct platform_device *pdev)
 
 	mfd->pdev = pdev;
 
-	if (mfd->panel.type == SPI_PANEL)
+	if (mfd->panel.type == SPI_PANEL || mfd->panel.type == EBI2_PANEL)
 		mfd->fb_imgType = MDP_RGB_565;
 
 	mfd->split_fb_left = mfd->split_fb_right = 0;
@@ -2949,7 +2949,7 @@ static int __mdss_fb_wait_for_fence_sub(struct msm_sync_pt_data *sync_pt_data,
 
 		ret = mdss_wait_sync_fence(fences[i], wait_ms);
 
-		if (ret == -ETIME) {
+		if (ret == -ETIMEDOUT) {
 			wait_jf = timeout - jiffies;
 			wait_ms = jiffies_to_msecs(wait_jf);
 			if (wait_jf < 0)
@@ -2965,14 +2965,14 @@ static int __mdss_fb_wait_for_fence_sub(struct msm_sync_pt_data *sync_pt_data,
 			MDSS_XLOG_TOUT_HANDLER("mdp");
 			ret = mdss_wait_sync_fence(fences[i], wait_ms);
 
-			if (ret == -ETIME)
+			if (ret == -ETIMEDOUT)
 				break;
 		}
 		mdss_put_sync_fence(fences[i]);
 	}
 
 	if (ret < 0) {
-		pr_err("%s: sync_fence_wait failed! ret = %x\n",
+		pr_err("%s: sync_fence_wait failed! ret = %d\n",
 				sync_pt_data->fence_name, ret);
 		for (; i < fence_cnt; i++)
 			mdss_put_sync_fence(fences[i]);

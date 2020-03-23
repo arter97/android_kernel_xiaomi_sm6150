@@ -1,4 +1,4 @@
-/* Copyright (c)2017-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c)2017-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -784,7 +784,7 @@ static void a6xx_start(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct gmu_dev_ops *gmu_dev_ops = GMU_DEVICE_OPS(device);
-	unsigned int bit, mal, mode, glbl_inv;
+	unsigned int bit, mal, mode, glbl_inv, channel;
 	unsigned int amsbc = 0;
 	static bool patch_reglist;
 
@@ -885,6 +885,10 @@ static void a6xx_start(struct adreno_device *adreno_dev)
 		"qcom,ubwc-mode", &mode))
 		mode = 0;
 
+	if (of_property_read_u32(device->pdev->dev.of_node,
+		"qcom,macrotiling-channels", &channel))
+		channel = 0; /* unknown and keep reset value */
+
 	switch (mode) {
 	case KGSL_UBWC_1_0:
 		mode = 1;
@@ -899,6 +903,9 @@ static void a6xx_start(struct adreno_device *adreno_dev)
 	default:
 		break;
 	}
+
+	if (channel == 8)
+		kgsl_regwrite(device, A6XX_RBBM_NC_MODE_CNTL, 1);
 
 	if (bit >= 13 && bit <= 16)
 		bit = (bit - 13) & 0x03;
@@ -1419,10 +1426,8 @@ static int a6xx_soft_reset(struct adreno_device *adreno_dev)
 	 * For the soft reset case with GMU enabled this part is done
 	 * by the GMU firmware
 	 */
-	if (gmu_core_gpmu_isenabled(device) &&
-		!test_bit(ADRENO_DEVICE_HARD_RESET, &adreno_dev->priv))
+	if (gmu_core_gpmu_isenabled(device))
 		return 0;
-
 
 	adreno_writereg(adreno_dev, ADRENO_REG_RBBM_SW_RESET_CMD, 1);
 	/*
@@ -1516,23 +1521,17 @@ static int a6xx_reset(struct kgsl_device *device, int fault)
 	/* Transition from ACTIVE to RESET state */
 	kgsl_pwrctrl_change_state(device, KGSL_STATE_RESET);
 
-	if (ret) {
-		/* If soft reset failed/skipped, then pull the power */
-		set_bit(ADRENO_DEVICE_HARD_RESET, &adreno_dev->priv);
-		/* since device is officially off now clear start bit */
-		clear_bit(ADRENO_DEVICE_STARTED, &adreno_dev->priv);
+	/* since device is officially off now clear start bit */
+	clear_bit(ADRENO_DEVICE_STARTED, &adreno_dev->priv);
 
-		/* Keep trying to start the device until it works */
-		for (i = 0; i < NUM_TIMES_RESET_RETRY; i++) {
-			ret = adreno_start(device, 0);
-			if (!ret)
-				break;
+	/* Keep trying to start the device until it works */
+	for (i = 0; i < NUM_TIMES_RESET_RETRY; i++) {
+		ret = adreno_start(device, 0);
+		if (!ret)
+			break;
 
-			msleep(20);
-		}
+		msleep(20);
 	}
-
-	clear_bit(ADRENO_DEVICE_HARD_RESET, &adreno_dev->priv);
 
 	if (ret)
 		return ret;

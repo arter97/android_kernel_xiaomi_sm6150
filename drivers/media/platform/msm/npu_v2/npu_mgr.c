@@ -1,4 +1,4 @@
-/* Copyright (c) 2018-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,8 +10,9 @@
  * GNU General Public License for more details.
  */
 
-/*
+/* -------------------------------------------------------------------------
  * Includes
+ * -------------------------------------------------------------------------
  */
 #include "npu_hw_access.h"
 #include "npu_mgr.h"
@@ -22,8 +23,9 @@
 #include <soc/qcom/subsystem_notif.h>
 #include <soc/qcom/subsystem_restart.h>
 
-/*
+/* -------------------------------------------------------------------------
  * Defines
+ * -------------------------------------------------------------------------
  */
 #define LOG_MSG_HEADER_SIZE      20
 #define LOG_MSG_START_MSG_INDEX  5
@@ -33,8 +35,9 @@
 #define NPU_FW_TIMEOUT_POLL_INTERVAL_MS  10
 #define NPU_FW_TIMEOUT_MS                5000
 
-/*
+/* -------------------------------------------------------------------------
  * File Scope Function Prototypes
+ * -------------------------------------------------------------------------
  */
 static void npu_ipc_irq_work(struct work_struct *work);
 static void npu_wdg_err_irq_work(struct work_struct *work);
@@ -92,8 +95,9 @@ static void npu_dequeue_misc_cmd(struct npu_host_ctx *ctx,
 static struct npu_misc_cmd *npu_find_misc_cmd(struct npu_host_ctx *ctx,
 	uint32_t trans_id);
 
-/*
+/* -------------------------------------------------------------------------
  * Function Definitions - Init / Deinit
+ * -------------------------------------------------------------------------
  */
 
 static int wait_npu_cpc_power_off(struct npu_device *npu_dev)
@@ -157,11 +161,10 @@ static int load_fw_nolock(struct npu_device *npu_dev, bool enable)
 	}
 
 	/* Keep reading ctrl status until NPU is ready */
-	if (wait_for_status_ready(npu_dev, REG_NPU_FW_CTRL_STATUS,
-		FW_CTRL_STATUS_MAIN_THREAD_READY_VAL, false)) {
-		ret = -EPERM;
+	ret = wait_for_status_ready(npu_dev, REG_NPU_FW_CTRL_STATUS,
+		FW_CTRL_STATUS_MAIN_THREAD_READY_VAL, false);
+	if (ret)
 		goto load_fw_fail;
-	}
 
 	npu_host_ipc_post_init(npu_dev);
 	NPU_DBG("firmware init complete\n");
@@ -428,7 +431,7 @@ static int disable_fw_nolock(struct npu_device *npu_dev)
 		msleep(500);
 	}
 
-	if (!host_ctx->auto_pil_disable) {
+	if (!ret && !host_ctx->auto_pil_disable) {
 		ret = wait_for_completion_timeout(
 			&host_ctx->fw_shutdown_done, NW_RSC_TIMEOUT_MS);
 		if (!ret) {
@@ -530,7 +533,7 @@ static int npu_notify_fw_pwr_state(struct npu_device *npu_dev,
 			reg_val = REGR(npu_dev, REG_NPU_FW_CTRL_STATUS);
 			if (reg_val & FW_CTRL_STATUS_PWR_NOTIFY_ERR_VAL) {
 				NPU_ERR("NOTIfY_PWR failed\n");
-				ret = -EPERM;
+				ret = -EIO;
 			}
 		}
 	}
@@ -694,7 +697,7 @@ int npu_host_init(struct npu_device *npu_dev)
 	host_ctx->wq_pri =
 		alloc_workqueue("npu_ipc_wq", WQ_HIGHPRI | WQ_UNBOUND, 0);
 	if (!host_ctx->wq || !host_ctx->wq_pri) {
-		ret = -EPERM;
+		ret = -ENOMEM;
 		goto fail;
 	} else {
 		INIT_WORK(&host_ctx->ipc_irq_work, npu_ipc_irq_work);
@@ -772,8 +775,9 @@ void npu_host_deinit(struct npu_device *npu_dev)
 	mutex_destroy(&host_ctx->lock);
 }
 
-/*
+/* -------------------------------------------------------------------------
  * Function Definitions - Interrupt Handler
+ * -------------------------------------------------------------------------
  */
 irqreturn_t npu_ipc_intr_hdlr(int irq, void *ptr)
 {
@@ -853,8 +857,9 @@ irqreturn_t npu_wdg_intr_hdlr(int irq, void *ptr)
 	return IRQ_HANDLED;
 }
 
-/*
+/* -------------------------------------------------------------------------
  * Function Definitions - Control
+ * -------------------------------------------------------------------------
  */
 static int host_error_hdlr(struct npu_device *npu_dev, bool force)
 {
@@ -918,10 +923,10 @@ static int host_error_hdlr(struct npu_device *npu_dev, bool force)
 	host_ctx->err_irq_sts = 0;
 
 	/* Keep reading ctrl status until NPU is ready */
-	if (wait_for_status_ready(npu_dev, REG_NPU_FW_CTRL_STATUS,
-		FW_CTRL_STATUS_MAIN_THREAD_READY_VAL, false)) {
+	ret = wait_for_status_ready(npu_dev, REG_NPU_FW_CTRL_STATUS,
+		FW_CTRL_STATUS_MAIN_THREAD_READY_VAL, false);
+	if (ret) {
 		NPU_ERR("wait for fw status ready timedout\n");
-		ret = -EPERM;
 		goto fw_start_done;
 	}
 
@@ -1200,8 +1205,9 @@ static int npu_notify_aop(struct npu_device *npu_dev, bool on)
 	return rc;
 }
 
-/*
+/* -------------------------------------------------------------------------
  * Function Definitions - Network Management
+ * -------------------------------------------------------------------------
  */
 static int network_put(struct npu_network *network)
 {
@@ -1332,8 +1338,9 @@ static void free_network(struct npu_host_ctx *ctx, struct npu_client *client,
 	}
 }
 
-/*
+/* -------------------------------------------------------------------------
  * Function Definitions - IPC
+ * -------------------------------------------------------------------------
  */
 static struct npu_network_cmd *npu_alloc_network_cmd(struct npu_host_ctx *ctx,
 	uint32_t stats_buf_size)
@@ -1874,8 +1881,9 @@ skip_read_msg:
 	mutex_unlock(&host_ctx->lock);
 }
 
-/*
+/* -------------------------------------------------------------------------
  * Function Definitions - Functionality
+ * -------------------------------------------------------------------------
  */
 int32_t npu_host_get_info(struct npu_device *npu_dev,
 			struct msm_npu_get_info_ioctl *get_info_ioctl)

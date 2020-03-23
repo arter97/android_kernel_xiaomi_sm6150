@@ -21,6 +21,7 @@
 #include <linux/slab.h>
 #include <linux/wait.h>
 #include <linux/mhi.h>
+#include <linux/memblock.h>
 #include "mhi_internal.h"
 
 const char * const mhi_log_level_str[MHI_MSG_LVL_MAX] = {
@@ -360,6 +361,11 @@ static int mhi_init_debugfs_mhi_chan_open(struct inode *inode, struct file *fp)
 	return single_open(fp, mhi_debugfs_mhi_chan_show, inode->i_private);
 }
 
+static int mhi_init_debugfs_mhi_vote_open(struct inode *inode, struct file *fp)
+{
+	return single_open(fp, mhi_debugfs_mhi_vote_show, inode->i_private);
+}
+
 static const struct file_operations debugfs_state_ops = {
 	.open = mhi_init_debugfs_mhi_states_open,
 	.release = single_release,
@@ -378,8 +384,14 @@ static const struct file_operations debugfs_chan_ops = {
 	.read = seq_read,
 };
 
-DEFINE_SIMPLE_ATTRIBUTE(debugfs_trigger_reset_fops, NULL,
-			mhi_debugfs_trigger_reset, "%llu\n");
+static const struct file_operations debugfs_vote_ops = {
+	.open = mhi_init_debugfs_mhi_vote_open,
+	.release = single_release,
+	.read = seq_read,
+};
+
+DEFINE_DEBUGFS_ATTRIBUTE(debugfs_trigger_reset_fops, NULL,
+			 mhi_debugfs_trigger_reset, "%llu\n");
 
 void mhi_init_debugfs(struct mhi_controller *mhi_cntrl)
 {
@@ -402,6 +414,8 @@ void mhi_init_debugfs(struct mhi_controller *mhi_cntrl)
 	debugfs_create_file("events", 0444, dentry, mhi_cntrl,
 			    &debugfs_ev_ops);
 	debugfs_create_file("chan", 0444, dentry, mhi_cntrl, &debugfs_chan_ops);
+	debugfs_create_file("vote", 0444, dentry, mhi_cntrl,
+			    &debugfs_vote_ops);
 	debugfs_create_file("reset", 0444, dentry, mhi_cntrl,
 			    &debugfs_trigger_reset_fops);
 	mhi_cntrl->dentry = dentry;
@@ -1355,7 +1369,7 @@ static int of_parse_dt(struct mhi_controller *mhi_cntrl,
 	return 0;
 
 error_ev_cfg:
-	kfree(mhi_cntrl->mhi_chan);
+	vfree(mhi_cntrl->mhi_chan);
 
 	return ret;
 }
@@ -1379,6 +1393,11 @@ int of_register_mhi_controller(struct mhi_controller *mhi_cntrl)
 
 	if (!mhi_cntrl->status_cb || !mhi_cntrl->link_status)
 		return -EINVAL;
+
+	if (!mhi_cntrl->iova_stop) {
+		mhi_cntrl->iova_start = memblock_start_of_DRAM();
+		mhi_cntrl->iova_stop = memblock_end_of_DRAM();
+	}
 
 	ret = of_parse_dt(mhi_cntrl, mhi_cntrl->of_node);
 	if (ret)
@@ -1430,6 +1449,9 @@ int of_register_mhi_controller(struct mhi_controller *mhi_cntrl)
 		mutex_init(&mhi_chan->mutex);
 		init_completion(&mhi_chan->completion);
 		rwlock_init(&mhi_chan->lock);
+
+		mhi_event = &mhi_cntrl->mhi_event[mhi_chan->er_index];
+		mhi_chan->bei = !!(mhi_event->intmod);
 	}
 
 	if (mhi_cntrl->bounce_buf) {
@@ -1521,7 +1543,7 @@ error_alloc_dev:
 	kfree(mhi_cntrl->mhi_cmd);
 
 error_alloc_cmd:
-	kfree(mhi_cntrl->mhi_chan);
+	vfree(mhi_cntrl->mhi_chan);
 	kfree(mhi_cntrl->mhi_event);
 
 	return ret;
@@ -1535,7 +1557,7 @@ void mhi_unregister_mhi_controller(struct mhi_controller *mhi_cntrl)
 
 	kfree(mhi_cntrl->mhi_cmd);
 	kfree(mhi_cntrl->mhi_event);
-	kfree(mhi_cntrl->mhi_chan);
+	vfree(mhi_cntrl->mhi_chan);
 	kfree(mhi_cntrl->mhi_tsync);
 
 	if (sfr_info) {
@@ -1609,9 +1631,6 @@ int mhi_prepare_for_power_up(struct mhi_controller *mhi_cntrl)
 
 			mhi_cntrl->bhie = mhi_cntrl->regs + bhie_off;
 		}
-
-		memset_io(mhi_cntrl->bhie + BHIE_RXVECADDR_LOW_OFFS, 0,
-			  BHIE_RXVECSTATUS_OFFS - BHIE_RXVECADDR_LOW_OFFS + 4);
 
 		if (mhi_cntrl->rddm_image)
 			mhi_rddm_prepare(mhi_cntrl, mhi_cntrl->rddm_image);
