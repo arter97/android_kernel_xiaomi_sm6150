@@ -23,7 +23,7 @@ do.cleanuponabort=0
 device.name1=phoenix
 device.name2=phoenixin
 block=/dev/block/bootdevice/by-name/boot
-is_slot_device=1
+is_slot_device=0
 ramdisk_compression=gzip
 " > kernelzip/props
 	cp -rp ~/android/anykernel/* kernelzip/
