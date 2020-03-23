@@ -1,7 +1,8 @@
 #!/bin/bash
 
 if [[ "${1}" != "skip" ]] ; then
-	./build_clean.sh
+	git reset --hard
+	git clean -fdx
 	./build_kernel.sh stock "$@" || exit 1
 fi
 
