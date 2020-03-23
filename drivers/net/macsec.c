@@ -3072,9 +3072,6 @@ static int macsec_dev_open(struct net_device *dev)
 	struct macsec_context ctx;
 	int err;
 
-	if (!(real_dev->flags & IFF_UP))
-		return -ENETDOWN;
-
 	err = dev_uc_add(real_dev, dev->dev_addr);
 	if (err < 0)
 		return err;
@@ -3164,6 +3161,11 @@ static void macsec_dev_set_rx_mode(struct net_device *dev)
 
 	dev_mc_sync(real_dev, dev);
 	dev_uc_sync(real_dev, dev);
+}
+
+static sci_t dev_to_sci(struct net_device *dev, __be16 port)
+{
+	return make_sci(dev->dev_addr, port);
 }
 
 static int macsec_set_mac_address(struct net_device *dev, void *p)
@@ -3281,6 +3283,7 @@ static const struct device_type macsec_type = {
 
 static const struct nla_policy macsec_rtnl_policy[IFLA_MACSEC_MAX + 1] = {
 	[IFLA_MACSEC_SCI] = { .type = NLA_U64 },
+	[IFLA_MACSEC_PORT] = { .type = NLA_U16 },
 	[IFLA_MACSEC_ICV_LEN] = { .type = NLA_U8 },
 	[IFLA_MACSEC_CIPHER_SUITE] = { .type = NLA_U64 },
 	[IFLA_MACSEC_WINDOW] = { .type = NLA_U32 },
